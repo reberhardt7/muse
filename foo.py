@@ -3,6 +3,7 @@ import thread
 import time
 import math
 import re
+import random
 
 # Standard notes in an octave
 keys_in_octave = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -82,31 +83,51 @@ transitions_minor = {
 }
 
 notes = {
-  'I': [0, 4, 7],
-  'II': [2, 6, 9],
-  'III': [4, 8, 11],
-  'IV': [5, 9, 12],
-  'V': [7, 11, 14],
-  'VI': [0, 9, 13],
-  # 'VI': [9, 13, 16],
-  'VII': [2, 11, 15],
-  # 'VII': [11, 15, 18],
-  'i': major_chord_to_minor('I'),
-  'ii': major_chord_to_minor('II'),
-  'iii': major_chord_to_minor('III'),
-  'iv': major_chord_to_minor('IV'),
-  'v': major_chord_to_minor('V'),
-  'vi': major_chord_to_minor('VI'),
-  'vii': major_chord_to_minor('VII'),
-  'ii0': [1, 4, 7, 9],
-  'vii0': [0, 4, 7, 10]
+    'I': [0, 4, 7],
+    'II': [2, 6, 9],
+    'III': [4, 8, 11],
+    'IV': [5, 9, 12],
+    'V': [7, 11, 14],
+    # 'VI': [0, 9, 13],
+    'VI': [9, 13, 16],
+    # 'VII': [2, 11, 15],
+    'VII': [11, 15, 18],
+    'ii0': [1, 4, 7, 9],
+    'vii0': [0, 4, 7, 10]
 }
 
 def major_chord_to_minor(symbol):
-  minor = notes[symbol]
-  minor[1] -= 1
-  return minor
+    minor = list(notes[symbol])
+    minor[1] -= 1
+    return minor
+
+notes['i'] = major_chord_to_minor('I')
+notes['ii'] = major_chord_to_minor('II')
+notes['iii'] = major_chord_to_minor('III')
+notes['iv'] = major_chord_to_minor('IV')
+notes['v'] = major_chord_to_minor('V')
+notes['vi'] = major_chord_to_minor('VI')
+notes['vii'] = major_chord_to_minor('VII')
 
 def get_chord(symbol, base_note):
-  return [notes[symbol] + base_note for i in range(len(notes[symbol]))]
+    return [notes[symbol][i] + base_note for i in range(len(notes[symbol]))]
 
+def play_progression(*args):
+    for x in args:
+        for note in get_chord(x, note_value('C5')):
+            play(note, 80, 1)
+        time.sleep(1)
+
+if __name__ == '__main__':
+    seed = transitions_major.keys()[random.randint(0, len(transitions_major.keys())-1)]
+    # seed = 'iii'
+    print seed
+    for note in get_chord(seed, note_value('C5')):
+        play(note, 80, 0.5)
+    time.sleep(0.5)
+    for i in range(7):
+        seed = transitions_major[seed][random.randint(0, len(transitions_major[seed])-1)]
+        print seed
+        for note in get_chord(seed, note_value('C5')):
+            play(note, 80, 0.5)
+        time.sleep(0.5)
