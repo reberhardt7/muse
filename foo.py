@@ -1,5 +1,5 @@
 import mido
-import thread
+from threading import Thread, Lock
 import time
 import math
 import re
@@ -26,13 +26,22 @@ minor_scale_progression = [0, 2, 3, 5, 7, 8, 10, 12]
 
 output = mido.open_output()
 
+mutex = Lock()
 def _play(note, vel, duration):
-    output.send(mido.Message('note_on', note=note, velocity=vel))
+    mutex.acquire()
+    try:
+        output.send(mido.Message('note_on', note=note, velocity=vel))
+    finally:
+        mutex.release()
     time.sleep(duration)
-    output.send(mido.Message('note_off', note=note, velocity=vel))
+    mutex.acquire()
+    try:
+        output.send(mido.Message('note_off', note=note, velocity=vel))
+    finally:
+        mutex.release()
 
 def play(note, vel, duration):
-    thread.start_new_thread(_play, (note, vel, duration))
+    Thread(target=_play, args=(note, vel, duration)).start()
 
 # major_scales = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#']
 # minor_scales = ['Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'G#', 'D#', 'A#']
@@ -118,16 +127,27 @@ def play_progression(*args):
             play(note, 80, 1)
         time.sleep(1)
 
+def pick_next_chord(seed, transitions):
+    return transitions[seed][random.randint(0, len(transitions[seed])-1)]
+
+def generate_progression(bars, major=True, seed=None):
+    transitions = transitions_major if major else transitions_minor
+    progression = [ pick_next_chord(seed, transitions) if seed else transitions.keys()[random.randint(0, len(transitions.keys())-1)] ]
+    for _ in range(bars - 1):
+        progression.append(pick_next_chord(progression[-1], transitions))
+    return progression
+
 if __name__ == '__main__':
-    seed = transitions_major.keys()[random.randint(0, len(transitions_major.keys())-1)]
-    # seed = 'iii'
-    print seed
-    for note in get_chord(seed, note_value('C5')):
-        play(note, 80, 0.5)
-    time.sleep(0.5)
-    for i in range(7):
-        seed = transitions_major[seed][random.randint(0, len(transitions_major[seed])-1)]
-        print seed
-        for note in get_chord(seed, note_value('C5')):
-            play(note, 80, 0.5)
-        time.sleep(0.5)
+    verse = generate_progression(4)
+    chorus = generate_progression(4, seed=verse[-1])
+
+    for _ in range(4):
+        for chord in verse:
+            for note in get_chord(chord, note_value('C5')):
+                play(note, 80, 0.75)
+            time.sleep(0.75)
+    for _ in range(4):
+        for chord in chorus:
+            for note in get_chord(chord, note_value('C5')):
+                play(note, 80, 0.75)
+            time.sleep(0.75)
