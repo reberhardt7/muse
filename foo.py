@@ -3,6 +3,7 @@ from threading import Thread, Lock
 import time
 import math
 import re
+import numpy
 from random import randint
 
 # Standard notes in an octave
@@ -143,109 +144,223 @@ def generate_progression(bars, major=True, seed=None):
 
 def generate_melody(key, progression, major=True):
     out = []
-    for chord in progression:
-        print chord
-        all_tones = generate_scale(key, 2, major)
-        chord_tones = get_chord(chord, note_value(key+'2'))
-        chord_tones.extend([x+12 for x in chord_tones])
-        non_chord_tones = list(set(all_tones[:-1]) - set(chord_tones))
-        non_chord_tones.extend([x+12 for x in non_chord_tones])
-        print chord_tones
+    for _ in range(2*int(randint(3, 6)/3.0)):
+        time_used = 0.0
+        for chord in progression:
+            all_tones = generate_scale(key, 2, major)
+            chord_tones = get_chord(chord, note_value(key+'2'))
+            chord_tones.extend([x+12 for x in chord_tones])
+            non_chord_tones = list(set(all_tones[:-1]) - set(chord_tones))
+            non_chord_tones.extend([x+12 for x in non_chord_tones])
+            last_played = None
 
-        for _ in range(4):
-            select_from = non_chord_tones if int(randint(0, 8)/8.0) else chord_tones
-            print select_from
-            out.append(select_from[randint(0, len(select_from)-1)])
+            while time_used < len(progression):
+                note_vals = [(0.125, 2), (0.25, 4), (0.375, 2), (0.5, 2), (0.75, 1), (1.0, 1), (1.25, 0.5), (1.5, 0.25)]
+                possible_note_vals = [x for x, p in note_vals if time_used + x <= len(progression)]
+                note_vals_prob = [p for x, p in note_vals if time_used + x <= len(progression)]
+                note_vals_prob = [x*1.0/sum(note_vals_prob) for x in note_vals_prob]
+                note_val = numpy.random.choice(possible_note_vals, p=note_vals_prob)
+                select_from = non_chord_tones if int(randint(0, 10)/10.0) else chord_tones
+                select_from_probabilities = [ (36 - int(math.fabs(last_played - x)))**1.5 if last_played else 1 for x in select_from ]
+                select_from_probabilities = [ x * 1.0 / sum(select_from_probabilities) for x in select_from_probabilities ]
+                out.append((numpy.random.choice(select_from, p=select_from_probabilities), 80, note_val))
+                last_played = out[-1][0]
+                out.extend([None for x in range(int(note_val/0.125)-1)])
+                time_used += note_val
+    if len(out) == 2*len(progression)*8:
+        out.extend(out)
+    print len(out)
     return out
 
 if __name__ == '__main__':
-    tempo = randint(80, 120)
+    tempo = randint(100, 200)
     seconds_per_beat = 60.0/tempo
     # major = bool(randint(0, 1))
     major = True
     key = keys_in_octave[randint(0, len(keys_in_octave)-1)]
     swing = bool(randint(0, 1))
 
-    verse = generate_progression(4, major=major)
-    chorus = generate_progression(4, major=major, seed=verse[-1])
+    verse_progression = generate_progression(4, major=major)
+    verse_chords = []
+    for _ in range(4):
+        for chord in verse_progression:
+            verse_chords.append((get_chord(chord, note_value(key+'2')), 80, 1.0))
+            verse_chords.extend([None for x in range(7)])
+    verse_rhythm_chords = []
+    for _ in range(4):
+        for chord in verse_progression:
+            verse_rhythm_chords.extend([(get_chord(chord, note_value(key+'2')), 80, 0.125),
+                                        (get_chord(chord, note_value(key+'2')), 60, 0.125)]*4)
+    verse_arp = []
+    for _ in range(4):
+        for chord in verse_progression:
+            notes_ = get_chord(chord, note_value(key+'2'))
+            for note in (notes_ + [notes_[1]] if len(notes_) == 3 else notes_):
+                verse_arp.append((note, 80, 0.25))
+                verse_arp.append(None)
     # Prevent ghost notes from getting too messy at high tempos
     # ghost_note_penalty = int((tempo/80.0)**2)
-    # print ghost_note_penalty
     ghost_note_penalty = 1
     snare = [ randint(20, 50) if int(randint(0, ghost_note_penalty)*1.0/ghost_note_penalty) else 0 for _ in range(8) ]
     snare[2] = 80
     snare[6] = 80
     bass = [ randint(30, 80) if int(randint(0, 2*ghost_note_penalty)/(2.0*ghost_note_penalty)) and i not in (2, 6) else 0 for i in range(8) ]
+    verse_snare = [ (note_value('G1'), x, 0.03) if x else None for x in snare ] * 16
+    verse_bass = [ (note_value('C1'), x, 0.03) if x else None for x in bass ] * 16
+    verse_hihat = [(note_value('C#2'), 70, 0.03), (note_value('C#2'), 40, 0.03)]*64 if randint(0, 1) else [None for x in range(128)]
+    verse_melody = generate_melody(key, verse_progression, major)
 
-    melody = generate_melody(key, verse, major)
-    print melody
-
-    enable_hihat = randint(0, 1)
+    chorus_progression = generate_progression(4, major=major, seed=verse_progression[-1])
+    chorus_chords = []
     for _ in range(4):
-        for chord in verse:
+        for chord in chorus_progression:
+            chorus_chords.append((get_chord(chord, note_value(key+'2')), 80, 1.0))
+            chorus_chords.extend([None for x in range(7)])
+    chorus_arp = []
+    for _ in range(4):
+        for chord in chorus_progression:
             notes_ = get_chord(chord, note_value(key+'2'))
-            for note in get_chord(chord, note_value(key+'2')):
-                play(note, 80, 1, channel=0)
-            for i, note in enumerate(notes_ + [notes_[1]] if len(notes_) == 3 else notes_):
-                mutex.acquire()
-                output.send(mido.Message('control_change', control=64, value=127, channel=1))
-                mutex.release()
-                play(note, 80, 0.5*seconds_per_beat, channel=1)
-                play(note-12, 100+randint(0, 20)-10, 0.5*seconds_per_beat, channel=3)
-                play(melody[verse.index(chord)*4+i], 80, 0.5*seconds_per_beat, channel=4)
-                pause = 0.333 if swing else 0.25
-                print verse.index(chord)*4+i
-                if enable_hihat:
-                    play(note_value('C#2'), 70, pause*seconds_per_beat, channel=2)
-                if snare[i*2]:
-                    play(note_value('G1'), snare[i*2], pause*seconds_per_beat, channel=2)
-                if bass[i*2]:
-                    play(note_value('C1'), bass[i*2], pause*seconds_per_beat, channel=2)
-                time.sleep(pause*seconds_per_beat)
-                pause = 0.167 if swing else 0.25
-                if enable_hihat and tempo <= 110:
-                    play(note_value('C#2'), 40, pause*seconds_per_beat, channel=2)
-                if snare[i*2+1]:
-                    play(note_value('G1'), snare[i*2+1], pause*seconds_per_beat, channel=2)
-                if bass[i*2+1]:
-                    play(note_value('C1'), bass[i*2+1], pause*seconds_per_beat, channel=2)
-                time.sleep(pause*seconds_per_beat)
-            mutex.acquire()
-            output.send(mido.Message('control_change', control=64, value=0, channel=1))
-            mutex.release()
-    # Mix it up!
+            for note in (notes_ + [notes_[1]] if len(notes_) == 3 else notes_):
+                chorus_arp.append((note, 80, 0.25))
+                chorus_arp.append(None)
     snare = [ randint(20, 50) if int(randint(0, ghost_note_penalty)*1.0/ghost_note_penalty) else 0 for _ in range(8) ]
     snare[2] = 80
     snare[6] = 80
     bass = [ randint(30, 80) if int(randint(0, 2*ghost_note_penalty)/(2.0*ghost_note_penalty)) and i not in (2, 6) else 0 for i in range(8) ]
-    enable_hihat = randint(0, 1)
-    for _ in range(4):
-        for chord in chorus:
-            notes_ = get_chord(chord, note_value(key+'2'))
-            for note in get_chord(chord, note_value(key+'2')):
-                play(note, 80, 1, channel=0)
-            for i, note in enumerate(notes_ + [notes_[1]] if len(notes_) == 3 else notes_):
-                mutex.acquire()
-                output.send(mido.Message('control_change', control=64, value=127, channel=1))
-                mutex.release()
-                play(note, 80, 0.5*seconds_per_beat, channel=1)
-                play(note-12, 100+randint(0, 20)-10, 0.5*seconds_per_beat, channel=3)
-                pause = 0.333 if swing else 0.25
-                if enable_hihat:
-                    play(note_value('C#2'), 70, pause*seconds_per_beat, channel=2)
-                if snare[i*2]:
-                    play(note_value('G1'), snare[i*2], pause*seconds_per_beat, channel=2)
-                if bass[i*2]:
-                    play(note_value('C1'), bass[i*2], pause*seconds_per_beat, channel=2)
-                time.sleep(pause*seconds_per_beat)
-                pause = 0.167 if swing else pause
-                if enable_hihat and tempo <= 110:
-                    play(note_value('C#2'), 40, pause*seconds_per_beat, channel=2)
-                if snare[i*2+1]:
-                    play(note_value('G1'), snare[i*2+1], pause*seconds_per_beat, channel=2)
-                if bass[i*2+1]:
-                    play(note_value('C1'), bass[i*2+1], pause*seconds_per_beat, channel=2)
-                time.sleep(pause*seconds_per_beat)
-            mutex.acquire()
-            output.send(mido.Message('control_change', control=64, value=0, channel=1))
-            mutex.release()
+    chorus_snare = [ (note_value('G1'), x, 0.03) if x else None for x in snare ] * 16
+    chorus_bass = [ (note_value('C1'), x, 0.03) if x else None for x in bass ] * 16
+    chorus_hihat = [(note_value('C#2'), 70, 0.03), (note_value('C#2'), 40, 0.03)]*64 if randint(0, 1) else [None for x in range(128)]
+    chorus_melody = generate_melody(key, verse_progression, major)
+
+    instruments = [(4, 0), (5, 0), (6, 0), (7, 0), (8, 0)]
+    # Only use violin/cello for slower tempos (the sample packs are slow to respond)
+    if tempo <= 140:
+        instruments.extend([(9, -12), (10, 12)])
+
+    bass_arp_instrument = [3, 11][randint(0, 1)]
+    drum_instrument = [2, 12, 13, 14][randint(0, 3)]
+
+    verse_instrument = instruments[randint(0, len(instruments)-1)]
+    chorus_instrument = instruments[randint(0, len(instruments)-1)]
+
+    print 'starting playback {}bpm'.format(tempo)
+    for i in range(128):
+        for note in verse_chords[i][0] if verse_chords[i] else []:
+            play(note, verse_chords[i][1], verse_chords[i][2]*seconds_per_beat*4, channel=0)
+        for note in verse_rhythm_chords[i][0] if verse_rhythm_chords[i] else []:
+            play(note, verse_rhythm_chords[i][1], ((0.167 if i%2 == 0 else 0.083) if swing else 0.125)*seconds_per_beat*4, channel=1)
+        for event in [(verse_arp[i], 1),
+                      ((verse_arp[i][0]-12, verse_arp[i][1], verse_arp[i][2]) if verse_arp[i] else None, bass_arp_instrument),
+                      (verse_snare[i], drum_instrument),
+                      (verse_bass[i], drum_instrument),
+                      (verse_hihat[i], drum_instrument),
+                      ((verse_melody[i][0]+verse_instrument[1], verse_melody[i][1], verse_melody[i][2]) if verse_melody[i] else None, verse_instrument[0])]:
+            if event[0]:
+                if swing and event[0][2] == 0.125:
+                    duration = 0.167 if i%2 == 0 else 0.083
+                else:
+                    duration = event[0][2]
+                play(event[0][0], event[0][1], duration*seconds_per_beat*4, channel=event[1])
+        time.sleep(((0.667 if i%2==0 else 0.333) if swing else 0.5)*seconds_per_beat)
+    for i in range(128):
+        for note in chorus_chords[i][0] if chorus_chords[i] else []:
+            play(note, chorus_chords[i][1], chorus_chords[i][2]*seconds_per_beat*4, channel=0)
+        for event in [(chorus_arp[i], 1),
+                      ((chorus_arp[i][0]-12, chorus_arp[i][1], chorus_arp[i][2]) if chorus_arp[i] else None, bass_arp_instrument),
+                      (chorus_snare[i], drum_instrument),
+                      (chorus_bass[i], drum_instrument),
+                      (chorus_hihat[i], drum_instrument),
+                      ((chorus_melody[i][0]+chorus_instrument[1], chorus_melody[i][1], chorus_melody[i][2]) if chorus_melody[i] else None, chorus_instrument[0])]:
+            if event[0]:
+                if swing and event[0][2] == 0.125:
+                    duration = 0.167 if i%2 == 0 else 0.083
+                else:
+                    duration = event[0][2]
+                play(event[0][0], event[0][1], duration*seconds_per_beat*4, channel=event[1])
+        time.sleep(((0.667 if i%2==0 else 0.333) if swing else 0.5)*seconds_per_beat)
+    for i in range(128):
+        for note in verse_chords[i][0] if verse_chords[i] else []:
+            play(note, verse_chords[i][1], verse_chords[i][2]*seconds_per_beat*4, channel=0)
+        for event in [(verse_arp[i], 1),
+                      ((verse_arp[i][0]-12, verse_arp[i][1], verse_arp[i][2]) if verse_arp[i] else None, bass_arp_instrument),
+                      (verse_snare[i], drum_instrument),
+                      (verse_bass[i], drum_instrument),
+                      (verse_hihat[i], drum_instrument),
+                      ((verse_melody[i][0]+verse_instrument[1], verse_melody[i][1], verse_melody[i][2]) if verse_melody[i] else None, verse_instrument[0])]:
+            if event[0]:
+                if swing and event[0][2] == 0.125:
+                    duration = 0.167 if i%2 == 0 else 0.083
+                else:
+                    duration = event[0][2]
+                play(event[0][0], event[0][1], duration*seconds_per_beat*4, channel=event[1])
+        time.sleep(((0.667 if i%2==0 else 0.333) if swing else 0.5)*seconds_per_beat)
+
+    # enable_hihat = randint(0, 1)
+    # for _ in range(4):
+    #     for chord in verse:
+    #         notes_ = get_chord(chord, note_value(key+'2'))
+    #         for note in get_chord(chord, note_value(key+'2')):
+    #             play(note, 80, 1, channel=0)
+    #         for i, note in enumerate(notes_ + [notes_[1]] if len(notes_) == 3 else notes_):
+    #             mutex.acquire()
+    #             output.send(mido.Message('control_change', control=64, value=127, channel=1))
+    #             mutex.release()
+    #             play(note, 80, 0.5*seconds_per_beat, channel=1)
+    #             play(note-12, 100+randint(0, 20)-10, 0.5*seconds_per_beat, channel=3)
+    #             play(melody[verse.index(chord)*4+i], 80, 0.5*seconds_per_beat, channel=4)
+    #             pause = 0.333 if swing else 0.25
+    #             print verse.index(chord)*4+i
+    #             if enable_hihat:
+    #                 play(note_value('C#2'), 70, pause*seconds_per_beat, channel=2)
+    #             if snare[i*2]:
+    #                 play(note_value('G1'), snare[i*2], pause*seconds_per_beat, channel=2)
+    #             if bass[i*2]:
+    #                 play(note_value('C1'), bass[i*2], pause*seconds_per_beat, channel=2)
+    #             time.sleep(pause*seconds_per_beat)
+    #             pause = 0.167 if swing else 0.25
+    #             if enable_hihat and tempo <= 110:
+    #                 play(note_value('C#2'), 40, pause*seconds_per_beat, channel=2)
+    #             if snare[i*2+1]:
+    #                 play(note_value('G1'), snare[i*2+1], pause*seconds_per_beat, channel=2)
+    #             if bass[i*2+1]:
+    #                 play(note_value('C1'), bass[i*2+1], pause*seconds_per_beat, channel=2)
+    #             time.sleep(pause*seconds_per_beat)
+    #         mutex.acquire()
+    #         output.send(mido.Message('control_change', control=64, value=0, channel=1))
+    #         mutex.release()
+    # # Mix it up!
+    # snare = [ randint(20, 50) if int(randint(0, ghost_note_penalty)*1.0/ghost_note_penalty) else 0 for _ in range(8) ]
+    # snare[2] = 80
+    # snare[6] = 80
+    # bass = [ randint(30, 80) if int(randint(0, 2*ghost_note_penalty)/(2.0*ghost_note_penalty)) and i not in (2, 6) else 0 for i in range(8) ]
+    # enable_hihat = randint(0, 1)
+    # for _ in range(4):
+    #     for chord in chorus:
+    #         notes_ = get_chord(chord, note_value(key+'2'))
+    #         for note in get_chord(chord, note_value(key+'2')):
+    #             play(note, 80, 1, channel=0)
+    #         for i, note in enumerate(notes_ + [notes_[1]] if len(notes_) == 3 else notes_):
+    #             mutex.acquire()
+    #             output.send(mido.Message('control_change', control=64, value=127, channel=1))
+    #             mutex.release()
+    #             play(note, 80, 0.5*seconds_per_beat, channel=1)
+    #             play(note-12, 100+randint(0, 20)-10, 0.5*seconds_per_beat, channel=3)
+    #             pause = 0.333 if swing else 0.25
+    #             if enable_hihat:
+    #                 play(note_value('C#2'), 70, pause*seconds_per_beat, channel=2)
+    #             if snare[i*2]:
+    #                 play(note_value('G1'), snare[i*2], pause*seconds_per_beat, channel=2)
+    #             if bass[i*2]:
+    #                 play(note_value('C1'), bass[i*2], pause*seconds_per_beat, channel=2)
+    #             time.sleep(pause*seconds_per_beat)
+    #             pause = 0.167 if swing else pause
+    #             if enable_hihat and tempo <= 110:
+    #                 play(note_value('C#2'), 40, pause*seconds_per_beat, channel=2)
+    #             if snare[i*2+1]:
+    #                 play(note_value('G1'), snare[i*2+1], pause*seconds_per_beat, channel=2)
+    #             if bass[i*2+1]:
+    #                 play(note_value('C1'), bass[i*2+1], pause*seconds_per_beat, channel=2)
+    #             time.sleep(pause*seconds_per_beat)
+    #         mutex.acquire()
+    #         output.send(mido.Message('control_change', control=64, value=0, channel=1))
+    #         mutex.release()
