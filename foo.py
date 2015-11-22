@@ -294,7 +294,17 @@ if __name__ == '__main__':
                     duration = event[0][2]
                 play(event[0][0], event[0][1], duration*seconds_per_beat*4, channel=event[1])
         time.sleep(((0.667 if i%2==0 else 0.333) if swing else 0.5)*seconds_per_beat)
-
+    for note in verse_chords[0][0]:
+        play(note, verse_chords[0][1], verse_chords[0][2]*seconds_per_beat*4, channel=0)
+    for event in [(verse_arp[0], 1),
+                  ((verse_arp[0][0]-12, verse_arp[0][1], verse_arp[0][2]) if verse_arp[0] else None, bass_arp_instrument),
+                  (verse_snare[0], drum_instrument),
+                  (verse_bass[0], drum_instrument),
+                  (verse_hihat[0], drum_instrument),
+                  ((note_value('D3'), 90, 0.1), drum_instrument),
+                  ((verse_arp[0][0]+verse_instrument[1], verse_melody[0][1], verse_melody[0][2]) if verse_melody[0] else None, verse_instrument[0])]:
+        if event[0]:
+            play(event[0][0], event[0][1], seconds_per_beat*4, channel=event[1])
     # enable_hihat = randint(0, 1)
     # for _ in range(4):
     #     for chord in verse:
