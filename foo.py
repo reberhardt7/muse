@@ -146,7 +146,7 @@ def generate_melody(key, progression, major=True):
     out = []
     for _ in range(2*int(randint(3, 6)/3.0)):
         time_used = 0.0
-        for chord in progression:
+        for i, chord in enumerate(progression):
             all_tones = generate_scale(key, 2, major)
             chord_tones = get_chord(chord, note_value(key+'2'))
             chord_tones.extend([x+12 for x in chord_tones])
@@ -154,7 +154,7 @@ def generate_melody(key, progression, major=True):
             non_chord_tones.extend([x+12 for x in non_chord_tones])
             last_played = None
 
-            while time_used < len(progression):
+            while time_used < i + 1:
                 note_vals = [(0.125, 2), (0.25, 4), (0.375, 2), (0.5, 2), (0.75, 1), (1.0, 1), (1.25, 0.5), (1.5, 0.25)]
                 possible_note_vals = [x for x, p in note_vals if time_used + x <= len(progression)]
                 note_vals_prob = [p for x, p in note_vals if time_used + x <= len(progression)]
